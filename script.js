@@ -232,3 +232,91 @@ function makeBreathShape(cssWidth, cssHeight) {
 }
 
 window.addEventListener('resize', setupSize);
+
+
+
+// ---------- mic: detecting a blow ----------
+
+// blowing on a mic just sounds like loud whooshy noise
+// so checking the volume (RMS) works surprisingly well
+function getVolume() {
+    analyser.getFloatTimeDomainData(audioSamples);
+    let sumOfSquares = 0;
+    for (const sample of audioSamples) {
+        sumOfSquares += sample * sample;
+    }
+    return Math.sqrt(sumOfSquares / audioSamples.length);
+}
+
+function getBlowStrength() {
+    let target = 0;
+
+    if (analyser) {
+        const volume = getVolume();
+        // higher sensitivity = lower threshold
+        const threshold = 0.25 * Math.pow(0.08, settings.micSensitivity);
+        target = clamp((volume - threshold) / (threshold * 1.5), 0, 1);
+        updateMicMeter(volume, threshold, target > 0);
+    }
+
+    if (spaceHeld) target = 1; // backup for testing with the keyboard
+
+    // goes up fast when you start blowing, fades out slower when you stop
+    const speed = target > blowStrength ? 0.5 : 0.12;
+    blowStrength += (target - blowStrength) * speed;
+    return blowStrength;
+}
+
+function updateMicMeter(volume, threshold, isBlowing) {
+    const meter = document.getElementById('mic-level');
+    // the pink line is right in the middle of the meter
+    meter.style.width = Math.min(100, (volume / (threshold * 2)) * 100) + '%';
+    meter.style.background = isBlowing ? '#e8a6d4' : '#fff';
+}
+
+
+// ---------- fog simulation ----------
+
+// runs every frame
+// deltaTime = seconds since the last frame, so it runs the same speed on fast and slow laptops
+function updateFog(deltaTime, blow) {
+    const fogToAdd = blow * settings.fogSpeed * deltaTime;
+    const fogToRemove = settings.clearSpeed * deltaTime;
+    let totalFog = 0;
+
+    for (let i = 0; i < fogDensity.length; i++) {
+        const shape = breathShape[i];
+        const pattern = fogPattern[i];
+        let density = fogDensity[i];
+
+        if (fogToAdd > 0) {
+            density += fogToAdd
+                * (0.35 + 0.65 * shape)    // more fog in the middle
+                * (0.55 + 0.45 * pattern)  // patchy
+                * (1.05 - density * 0.5);  // slows down when it's already thick
+        }
+
+        // edges clear first like real breath on a window
+        density -= fogToRemove * (1.6 - shape) * (1.3 - pattern * 0.6);
+
+        density = clamp(density, 0, 1);
+        fogDensity[i] = density;
+        fogImage.data[i * 4 + 3] = density * 255;
+        totalFog += density;
+    }
+
+    // blowing again slowly fogs over what you wrote
+    // (destination-out = rubber instead of pen)
+    if (blow > 0.02) {
+        strokes.ctx.globalCompositeOperation = 'destination-out';
+        strokes.ctx.fillStyle = `rgba(0, 0, 0, ${Math.min(1, blow * deltaTime * 2.5)})`;
+        strokes.ctx.fillRect(0, 0, width, height);
+        strokes.ctx.globalCompositeOperation = 'source-over';
+    }
+
+    // once the glass is fully clear, forget the old drawing
+    const averageFog = totalFog / fogDensity.length;
+    if (averageFog < 0.005) {
+        strokes.ctx.clearRect(0, 0, width, height);
+    }
+}
