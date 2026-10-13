@@ -14,7 +14,7 @@ body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
-/* the main canvas will fills the whole window */
+/* the main canvas fills the whole window */
 #screen {
     position: fixed;
     inset: 0;
@@ -24,51 +24,145 @@ body {
     cursor: crosshair;
     touch-action: none;
     /* stops the page scrolling when drawing on a phone for the ppl who use */
-    /* ---------- start screen ---------- */
+}
 
-    #start-screen {
-        position: fixed;
-        inset: 0;
-        z-index: 10;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        gap: 18px;
-        padding: 24px;
-        text-align: center;
-        color: #2a2630;
-        background: radial-gradient(circle at 50% 40%, #e9e4ef 0%, #b9b4c4 55%, #6e6a78 100%);
-    }
+/* ---------- start screen ---------- */
 
-    #start-screen h1 {
-        font-family: "Brush Script MT", "Snell Roundhand", cursive;
-        font-weight: 400;
-        font-size: clamp(56px, 10vw, 110px);
-        color: #c98bb9;
-        text-shadow: 0 2px 12px rgba(255, 255, 255, 0.6);
-    }
+#start-screen {
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    padding: 24px;
+    text-align: center;
+    color: #2a2630;
+    background: radial-gradient(circle at 50% 40%, #e9e4ef 0%, #b9b4c4 55%, #6e6a78 100%);
+}
 
-    #start-screen p {
-        max-width: 420px;
-        line-height: 1.5;
-        opacity: 0.85;
-    }
+#start-screen h1 {
+    font-family: "Brush Script MT", "Snell Roundhand", cursive;
+    font-weight: 400;
+    font-size: clamp(56px, 10vw, 110px);
+    color: #c98bb9;
+    text-shadow: 0 2px 12px rgba(255, 255, 255, 0.6);
+}
 
-    #start-button {
-        padding: 14px 28px;
-        border: none;
-        border-radius: 999px;
-        background: #2a2630;
-        color: #fff;
-        font-size: 16px;
-        font-weight: 600;
-        cursor: pointer;
-    }
+#start-screen p {
+    max-width: 420px;
+    line-height: 1.5;
+    opacity: 0.85;
+}
 
-    #error-message {
-        min-height: 1em;
-        font-size: 14px;
-        color: #8a1c3c;
-    }
+#start-button {
+    padding: 14px 28px;
+    border: none;
+    border-radius: 999px;
+    background: #2a2630;
+    color: #fff;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+#error-message {
+    min-height: 1em;
+    font-size: 14px;
+    color: #8a1c3c;
+}
+
+/* ---------- hint + controls ---------- */
+
+#hint,
+#controls {
+    position: fixed;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(20, 20, 28, 0.35);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+}
+
+#hint {
+    top: 20px;
+    padding: 8px 16px;
+    border-radius: 999px;
+    font-size: 14px;
+    white-space: nowrap;
+    pointer-events: none;
+    transition: opacity 1s;
+}
+
+#controls {
+    bottom: 20px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    max-width: calc(100vw - 32px);
+    padding: 10px 16px;
+    border-radius: 22px;
+    font-size: 13px;
+    transition: opacity 0.3s;
+}
+
+#controls label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    opacity: 0.9;
+}
+
+#controls input[type="range"] {
+    width: 80px;
+    accent-color: #e8a6d4;
+}
+
+#controls button {
+    padding: 6px 12px;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.12);
+    color: #fff;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+#controls button:hover {
+    background: rgba(255, 255, 255, 0.25);
+}
+
+.hidden {
+    opacity: 0;
+    pointer-events: none;
+}
+
+/* ---------- mic meter ---------- */
+
+#mic-meter {
+    position: relative;
+    width: 70px;
+    height: 8px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.2);
+    overflow: hidden;
+}
+
+#mic-level {
+    width: 0;
+    height: 100%;
+    background: #fff;
+}
+
+#mic-threshold {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    width: 2px;
+    background: #e8a6d4;
 }
