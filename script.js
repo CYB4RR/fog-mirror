@@ -320,3 +320,383 @@ function updateFog(deltaTime, blow) {
         strokes.ctx.clearRect(0, 0, width, height);
     }
 }
+
+
+
+// ---------- drawing everything ----------
+
+function drawCamera() {
+    const { ctx } = display;
+    const videoWidth = video.videoWidth;
+    const videoHeight = video.videoHeight;
+
+    // fill the whole screen without stretching, crops whatever doesn't fit
+    const scale = Math.max(width / videoWidth, height / videoHeight);
+    const drawWidth = videoWidth * scale;
+    const drawHeight = videoHeight * scale;
+
+    // flip it so it acts like a mirror
+    ctx.save();
+    ctx.translate(width, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(video, (width - drawWidth) / 2, (height - drawHeight) / 2, drawWidth, drawHeight);
+    ctx.restore();
+}
+
+function drawFogLayer() {
+    // blur the cam: shrink it tiny then stretch it back up
+    // (ctx.filter = 'blur()' would be easier but not every browser supports it on canvas)
+    blurMedium.ctx.drawImage(display.canvas, 0, 0, blurMedium.canvas.width, blurMedium.canvas.height);
+    blurSmall.ctx.drawImage(blurMedium.canvas, 0, 0, blurSmall.canvas.width, blurSmall.canvas.height);
+    blurMedium.ctx.drawImage(blurSmall.canvas, 0, 0, blurMedium.canvas.width, blurMedium.canvas.height);
+
+    const { ctx } = fogLayer;
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.drawImage(blurMedium.canvas, 0, 0, width, height);
+
+    // milky tint + grain so it looks like steam and not just blurry
+    ctx.fillStyle = 'rgba(228, 232, 242, 0.45)';
+    ctx.fillRect(0, 0, width, height);
+    if (grainPattern) {
+        ctx.fillStyle = grainPattern;
+        ctx.fillRect(0, 0, width, height);
+    }
+}
+
+function drawFogMask() {
+    // where the fog is = fog grid stretched to full size...
+    fogGrid.ctx.putImageData(fogImage, 0, 0);
+    fogMask.ctx.clearRect(0, 0, width, height);
+    fogMask.ctx.drawImage(fogGrid.canvas, 0, 0, width, height);
+
+    // ...minus everything you've drawn
+    fogMask.ctx.globalCompositeOperation = 'destination-out';
+    fogMask.ctx.drawImage(strokes.canvas, 0, 0);
+    fogMask.ctx.globalCompositeOperation = 'source-over';
+}
+
+function render() {
+    if (!video.videoWidth) return; // cam isn't ready yet
+
+    drawCamera();
+    drawFogLayer();
+    drawFogMask();
+
+    // cut the fog into the shape of the mask then put it over the cam
+    fogLayer.ctx.globalCompositeOperation = 'destination-in';
+    fogLayer.ctx.drawImage(fogMask.canvas, 0, 0);
+    fogLayer.ctx.globalCompositeOperation = 'source-over';
+
+    display.ctx.drawImage(fogLayer.canvas, 0, 0);
+}
+
+
+// ---------- drawing with mouse / trackpad / finger ----------
+
+// turns where you clicked into canvas coordinates
+function getPoint(event) {
+    const rect = display.canvas.getBoundingClientRect();
+    return {
+        x: (event.clientX - rect.left) * pixelRatio,
+        y: (event.clientY - rect.top) * pixelRatio,
+    };
+}
+
+function drawStroke(from, to) {
+    const { ctx } = strokes;
+    ctx.strokeStyle = '#000'; // colour doesn't matter, it's only used to cut out the fog
+    ctx.lineWidth = settings.brushSize * pixelRatio;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.shadowBlur = 5 * pixelRatio; // soft edges like an actual finger
+    ctx.shadowColor = '#000';
+
+    ctx.beginPath();
+    ctx.moveTo(from.x, from.y);
+    ctx.lineTo(to.x + 0.01, to.y); // +0.01 so just tapping still draws a dot
+    ctx.stroke();
+
+    ctx.shadowBlur = 0;
+}
+
+// pointer events work for mouse, trackpad, finger AND stylus
+display.canvas.addEventListener('pointerdown', (event) => {
+    isDrawing = true;
+    display.canvas.setPointerCapture(event.pointerId);
+    lastPoint = getPoint(event);
+    drawStroke(lastPoint, lastPoint);
+});
+
+display.canvas.addEventListener('pointermove', (event) => {
+    if (!isDrawing) return;
+
+    // coalesced events = the in between points the browser skipped
+    // makes fast strokes smooth instead of jaggy
+    const events = event.getCoalescedEvents ? event.getCoalescedEvents() : [event];
+    for (const e of events) {
+        const point = getPoint(e);
+        drawStroke(lastPoint, point);
+        lastPoint = point;
+    }
+});
+
+function stopDrawing() {
+    isDrawing = false;
+}
+display.canvas.addEventListener('pointerup', stopDrawing);
+display.canvas.addEventListener('pointercancel', stopDrawing);
+
+
+// ---------- controls ----------
+
+const controls = document.getElementById('controls');
+const hint = document.getElementById('hint');
+
+document.getElementById('sensitivity-slider').addEventListener('input', (event) => {
+    settings.micSensitivity = Number(event.target.value);
+});
+
+document.getElementById('brush-slider').addEventListener('input', (event) => {
+    settings.brushSize = Number(event.target.value);
+});
+
+// slider goes 0 to 1, turned into a clear speed between 0.2 (fast) and 0.01 (slow)
+document.getElementById('linger-slider').addEventListener('input', (event) => {
+    settings.clearSpeed = 0.2 * Math.pow(0.05, Number(event.target.value));
+});
+
+// fog button = fog up the whole screen at once
+document.getElementById('fog-button').addEventListener('click', () => {
+    for (let i = 0; i < fogDensity.length; i++) {
+        fogDensity[i] = 0.75 + 0.25 * fogPattern[i];
+    }
+    strokes.ctx.clearRect(0, 0, width, height);
+});
+
+// clear button = wipe everything
+document.getElementById('clear-button').addEventListener('click', () => {
+    fogDensity.fill(0);
+    strokes.ctx.clearRect(0, 0, width, height);
+});
+
+// save button = downloads a png of the screen
+document.getElementById('save-button').addEventListener('click', () => {
+    display.canvas.toBlob((blob) => {
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = 'fog-note.png';
+        link.click();
+        URL.revokeObjectURL(link.href);
+    });
+});
+
+// hold space = fake blowing, H = hide the controls
+window.addEventListener('keydown', (event) => {
+    if (event.code === 'Space') {
+        spaceHeld = true;
+        event.preventDefault(); // stops space scrolling the page
+    }
+    if (event.key.toLowerCase() === 'h') {
+        controls.classList.toggle('hidden');
+        hint.classList.add('hidden');
+    }
+});
+
+window.addEventListener('keyup', (event) => {
+    if (event.code === 'Space') spaceHeld = false;
+});
+
+
+// ---------- hand tracking ----------
+// uses google's mediapipe to find your hand in the cam
+// point with your index finger to draw, open your hand (or make a fist) to stop
+
+const MEDIAPIPE_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
+const HAND_MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task';
+
+// mediapipe gives 21 points on your hand, these are the ones we need
+const WRIST = 0;
+const INDEX_MIDDLE_JOINT = 6;
+const INDEX_TIP = 8;
+const MIDDLE_MIDDLE_JOINT = 10;
+const MIDDLE_TIP = 12;
+
+let handLandmarker = null;
+let lastVideoTime = -1;
+let fingertip = null;       // where your index finger is on screen (smoothed)
+let fingerIsDrawing = false;
+let lastFingerPoint = null;
+
+async function setupHandTracking() {
+    try {
+        // loads the library from the internet, only when it's needed
+        const { FilesetResolver, HandLandmarker } = await import(`${MEDIAPIPE_URL}/vision_bundle.mjs`);
+        const vision = await FilesetResolver.forVisionTasks(`${MEDIAPIPE_URL}/wasm`);
+
+        // try the graphics card first (faster), fall back to the normal cpu if it doesn't work
+        const makeLandmarker = (delegate) => HandLandmarker.createFromOptions(vision, {
+            baseOptions: { modelAssetPath: HAND_MODEL_URL, delegate },
+            runningMode: 'VIDEO',
+            numHands: 1,
+        });
+        try {
+            handLandmarker = await makeLandmarker('GPU');
+        } catch {
+            handLandmarker = await makeLandmarker('CPU');
+        }
+
+        hint.textContent = 'hand tracking on ☝️ point to draw, open your hand to stop';
+        hint.classList.remove('hidden');
+        setTimeout(() => hint.classList.add('hidden'), 5000);
+    } catch (error) {
+        // no internet or the library didn't load? the mouse + touch still work
+        console.warn('hand tracking could not load', error);
+    }
+}
+
+function distance(a, b) {
+    return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+// pointing = index finger straight out, middle finger curled in
+// (a finger is "straight" if its tip is further from the wrist than its middle joint)
+function isPointing(hand) {
+    const wrist = hand[WRIST];
+    const indexUp = distance(hand[INDEX_TIP], wrist) > distance(hand[INDEX_MIDDLE_JOINT], wrist);
+    const middleDown = distance(hand[MIDDLE_TIP], wrist) < distance(hand[MIDDLE_MIDDLE_JOINT], wrist);
+    return indexUp && middleDown;
+}
+
+// mediapipe gives positions from 0 to 1 across the video
+// this turns that into a spot on the screen, matching how drawCamera() fits + flips the video
+function videoToScreen(point) {
+    const scale = Math.max(width / video.videoWidth, height / video.videoHeight);
+    const drawWidth = video.videoWidth * scale;
+    const drawHeight = video.videoHeight * scale;
+    const offsetX = (width - drawWidth) / 2;
+    const offsetY = (height - drawHeight) / 2;
+
+    return {
+        x: width - (offsetX + point.x * drawWidth), // flipped because the cam is a mirror
+        y: offsetY + point.y * drawHeight,
+    };
+}
+
+function updateHandTracking() {
+    // only check when the cam has a new frame (no point checking the same picture twice)
+    if (!handLandmarker || video.currentTime === lastVideoTime) return;
+    lastVideoTime = video.currentTime;
+
+    const result = handLandmarker.detectForVideo(video, performance.now());
+    const hand = result.landmarks[0];
+
+    // no hand in the picture = stop drawing
+    if (!hand) {
+        fingertip = null;
+        fingerIsDrawing = false;
+        lastFingerPoint = null;
+        return;
+    }
+
+    // smooth it out a bit so the line isn't all wobbly
+    const target = videoToScreen(hand[INDEX_TIP]);
+    fingertip = fingertip
+        ? { x: lerp(fingertip.x, target.x, 0.5), y: lerp(fingertip.y, target.y, 0.5) }
+        : target;
+
+    fingerIsDrawing = isPointing(hand);
+    if (fingerIsDrawing) {
+        drawStroke(lastFingerPoint || fingertip, fingertip);
+        lastFingerPoint = fingertip;
+    } else {
+        lastFingerPoint = null;
+    }
+}
+
+// little circle where your finger is so you can see where you're aiming
+// white = just hovering, pink = drawing
+function drawFingertipCursor() {
+    if (!fingertip) return;
+
+    const { ctx } = display;
+    ctx.beginPath();
+    ctx.arc(fingertip.x, fingertip.y, (settings.brushSize / 2) * pixelRatio, 0, Math.PI * 2);
+    ctx.strokeStyle = fingerIsDrawing ? '#e8a6d4' : 'rgba(255, 255, 255, 0.7)';
+    ctx.lineWidth = 2 * pixelRatio;
+    ctx.stroke();
+}
+
+
+// ---------- start ----------
+
+async function getCameraAndMic() {
+    const videoOptions = { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } };
+
+    try {
+        return await navigator.mediaDevices.getUserMedia({
+            video: videoOptions,
+            // browsers clean up "noise" for video calls by default
+            // which would literally filter out the blowing sound we need lol
+            audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+        });
+    } catch {
+        // no mic? still works with just the cam + spacebar
+        const stream = await navigator.mediaDevices.getUserMedia({ video: videoOptions });
+        hint.textContent = 'no mic found, hold space to fog · draw to wipe';
+        return stream;
+    }
+}
+
+function setupMicrophone(stream) {
+    if (stream.getAudioTracks().length === 0) return;
+
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const source = audioContext.createMediaStreamSource(stream);
+    analyser = audioContext.createAnalyser();
+    analyser.fftSize = 1024;
+    analyser.smoothingTimeConstant = 0.3;
+    source.connect(analyser); // NOT connected to the speakers so no feedback
+    audioSamples = new Float32Array(analyser.fftSize);
+}
+
+async function start() {
+    let stream;
+    try {
+        stream = await getCameraAndMic();
+    } catch {
+        document.getElementById('error-message').textContent =
+            'Could not open the camera. Allow camera access, and open this through Live Server (http://localhost), not as a file.';
+        return;
+    }
+
+    video.srcObject = stream;
+    await video.play();
+    setupMicrophone(stream);
+    setupHandTracking(); // no await, so the app starts straight away while this loads
+
+    setupSize();
+    grainPattern = makeGrainPattern();
+
+    // hide the start screen, show the controls + hint
+    document.getElementById('start-screen').remove();
+    controls.classList.remove('hidden');
+    hint.classList.remove('hidden');
+    setTimeout(() => hint.classList.add('hidden'), 6000); // hint disappears after 6 secs
+
+    // main loop: listen -> update fog -> draw, every frame (~60 times a sec)
+    let lastTime = performance.now();
+    function loop(now) {
+        const deltaTime = Math.min(0.05, (now - lastTime) / 1000); // in secs, capped in case the tab lagged
+        lastTime = now;
+
+        updateHandTracking();
+        updateFog(deltaTime, getBlowStrength());
+        render();
+        drawFingertipCursor();
+        requestAnimationFrame(loop);
+    }
+    requestAnimationFrame(loop);
+}
+
+// everything starts when you click the button
+document.getElementById('start-button').addEventListener('click', start);
