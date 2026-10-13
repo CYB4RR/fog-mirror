@@ -24,4 +24,51 @@ body {
     cursor: crosshair;
     touch-action: none;
     /* stops the page scrolling when drawing on a phone for the ppl who use */
+    /* ---------- start screen ---------- */
+
+    #start-screen {
+        position: fixed;
+        inset: 0;
+        z-index: 10;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 18px;
+        padding: 24px;
+        text-align: center;
+        color: #2a2630;
+        background: radial-gradient(circle at 50% 40%, #e9e4ef 0%, #b9b4c4 55%, #6e6a78 100%);
+    }
+
+    #start-screen h1 {
+        font-family: "Brush Script MT", "Snell Roundhand", cursive;
+        font-weight: 400;
+        font-size: clamp(56px, 10vw, 110px);
+        color: #c98bb9;
+        text-shadow: 0 2px 12px rgba(255, 255, 255, 0.6);
+    }
+
+    #start-screen p {
+        max-width: 420px;
+        line-height: 1.5;
+        opacity: 0.85;
+    }
+
+    #start-button {
+        padding: 14px 28px;
+        border: none;
+        border-radius: 999px;
+        background: #2a2630;
+        color: #fff;
+        font-size: 16px;
+        font-weight: 600;
+        cursor: pointer;
+    }
+
+    #error-message {
+        min-height: 1em;
+        font-size: 14px;
+        color: #8a1c3c;
+    }
 }
